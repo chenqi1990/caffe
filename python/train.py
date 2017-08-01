@@ -5,11 +5,13 @@ Trains a model using one or more GPUs.
 from multiprocessing import Process
 
 import caffe
+import os
 
 
 def train(
         solver,  # solver proto definition
         snapshot,  # solver snapshot to restore
+        pretrained_model,  # pretrained_model
         gpus,  # list of device ids
         timing=False,  # show timing info for compute and communications
 ):
@@ -22,7 +24,7 @@ def train(
     procs = []
     for rank in range(len(gpus)):
         p = Process(target=solve,
-                    args=(solver, snapshot, gpus, timing, uid, rank))
+                    args=(solver, snapshot, pretrained_model, gpus, timing, uid, rank))
         p.daemon = True
         p.start()
         procs.append(p)
@@ -62,7 +64,7 @@ def time(solver, nccl):
     solver.add_callback(lambda: '', lambda: (allrd.stop(), show_time()))
 
 
-def solve(proto, snapshot, gpus, timing, uid, rank):
+def solve(proto, snapshot, pretrained_model, gpus, timing, uid, rank):
     caffe.set_mode_gpu()
     caffe.set_device(gpus[rank])
     caffe.set_solver_count(len(gpus))
@@ -72,6 +74,9 @@ def solve(proto, snapshot, gpus, timing, uid, rank):
     solver = caffe.SGDSolver(proto)
     if snapshot and len(snapshot) != 0:
         solver.restore(snapshot)
+
+    if pretrained_model and len(pretrained_model) != 0:
+        solver.net.copy_from(pretrained_model)
 
     nccl = caffe.NCCL(solver, uid)
     nccl.bcast()
@@ -92,9 +97,10 @@ if __name__ == '__main__':
 
     parser.add_argument("--solver", required=True, help="Solver proto definition.")
     parser.add_argument("--snapshot", help="Solver snapshot to restore.")
+    parser.add_argument("--pretrained_model", help="pretrained_model")
     parser.add_argument("--gpus", type=int, nargs='+', default=[0],
                         help="List of device ids.")
     parser.add_argument("--timing", action='store_true', help="Show timing info.")
     args = parser.parse_args()
 
-    train(args.solver, args.snapshot, args.gpus, args.timing)
+    train(args.solver, args.snapshot, args.pretrained_model, args.gpus, args.timing)
